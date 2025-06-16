@@ -31,6 +31,8 @@ import {
   GestureHandlerRootView,
 } from "react-native-gesture-handler";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import RootNavigator from "./navigation/RootNavigator";
+import { FlashcardProvider } from "./contexts/FlashcardContext";
 
 // === フラッシュカードの型定義 ===
 interface Flashcard {
@@ -1015,211 +1017,13 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 // === App コンポーネントに FlashcardContext.Provider を追加 ===
 export default function App() {
-  const [folders, setFolders] = useState<Folder[]>([
-    { id: "uncategorized", name: "未分類" },
-  ]);
-  const [flashcards, setFlashcards] = useState<Flashcard[]>([
-    {
-      id: "1",
-      front: "りんご",
-      back: "apple",
-      folderId: "uncategorized",
-      correctCount: 0,
-      incorrectCount: 0,
-      passCount: 0,
-      shownCount: 0,
-      lastAnsweredAt: undefined,
-      lastResult: undefined,
-      streak: 0,
-    },
-    {
-      id: "2",
-      front: "みかん",
-      back: "orange",
-      folderId: "uncategorized",
-      correctCount: 0,
-      incorrectCount: 0,
-      passCount: 0,
-      shownCount: 0,
-      lastAnsweredAt: undefined,
-      lastResult: undefined,
-      streak: 0,
-    },
-    {
-      id: "3",
-      front: "ぶどう",
-      back: "grape",
-      folderId: "uncategorized",
-      correctCount: 0,
-      incorrectCount: 0,
-      passCount: 0,
-      shownCount: 0,
-      lastAnsweredAt: undefined,
-      lastResult: undefined,
-      streak: 0,
-    },
-    {
-      id: "4",
-      front: "ばなな",
-      back: "banana",
-      folderId: "uncategorized",
-      correctCount: 0,
-      incorrectCount: 0,
-      passCount: 0,
-      shownCount: 0,
-      lastAnsweredAt: undefined,
-      lastResult: undefined,
-      streak: 0,
-    },
-    {
-      id: "5",
-      front: "地球の衛星",
-      back: "月",
-      folderId: "uncategorized",
-      correctCount: 0,
-      incorrectCount: 0,
-      passCount: 0,
-      shownCount: 0,
-      lastAnsweredAt: undefined,
-      lastResult: undefined,
-      streak: 0,
-    },
-  ]);
-  const [loading, setLoading] = useState(true);
-
-  // --- AsyncStorageから復元 ---
-  useEffect(() => {
-    (async () => {
-      try {
-        const [fc, fd] = await Promise.all([
-          AsyncStorage.getItem("flashcards"),
-          AsyncStorage.getItem("folders"),
-        ]);
-        if (fc) setFlashcards(JSON.parse(fc));
-        if (fd) setFolders(JSON.parse(fd));
-      } catch (e) {
-        // 読み込み失敗時は初期値のまま
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  // --- flashcards/folders変更時に保存 ---
-  useEffect(() => {
-    if (!loading) {
-      AsyncStorage.setItem("flashcards", JSON.stringify(flashcards));
-    }
-  }, [flashcards, loading]);
-  useEffect(() => {
-    if (!loading) {
-      AsyncStorage.setItem("folders", JSON.stringify(folders));
-    }
-  }, [folders, loading]);
-
-  // カードを追加する関数
-  const addFlashcard = (front: string, back: string, folderId: string) => {
-    const newCard: Flashcard = {
-      id: Date.now().toString(),
-      front,
-      back,
-      folderId,
-      correctCount: 0,
-      incorrectCount: 0,
-      passCount: 0,
-      shownCount: 0,
-      lastAnsweredAt: undefined,
-      lastResult: undefined,
-      streak: 0,
-    };
-    setFlashcards((prevCards) => [...prevCards, newCard]);
-  };
-
-  // フォルダを追加する関数
-  const addFolder = (name: string) => {
-    const newFolder: Folder = {
-      id: Date.now().toString(), // 簡単なユニークIDを生成
-      name,
-    };
-    setFolders((prevFolders) => [...prevFolders, newFolder]);
-  };
-
-  // カードを編集する関数
-  const editFlashcard = (id: string, front: string, back: string) => {
-    setFlashcards((prev) =>
-      prev.map((card) => (card.id === id ? { ...card, front, back } : card))
-    );
-  };
-
-  // カードを削除する関数
-  const deleteFlashcard = (id: string) => {
-    setFlashcards((prev) => prev.filter((card) => card.id !== id));
-  };
-
-  const flashcardContextValue: FlashcardContextType = {
-    flashcards,
-    addFlashcard,
-    folders,
-    addFolder,
-    editFlashcard,
-    deleteFlashcard,
-    setFlashcards, // 追加
-  };
-
-  if (loading) {
-    return (
-      <GestureHandlerRootView
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <Text style={{ fontSize: 20, color: "#888" }}>
-          データを読み込み中……
-        </Text>
-      </GestureHandlerRootView>
-    );
-  }
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <FlashcardContext.Provider value={flashcardContextValue}>
+      <FlashcardProvider>
         <NavigationContainer>
-          <Stack.Navigator>
-            <Stack.Screen
-              name="Home"
-              component={HomeScreen}
-              options={{ title: "ようこそ" }}
-            />
-            <Stack.Screen
-              name="Details"
-              component={DetailsScreen}
-              options={{ title: "詳細" }}
-            />
-            <Stack.Screen
-              name="Anki"
-              component={AnkiScreen}
-              options={{ title: "暗記アプリ" }}
-            />
-            <Stack.Screen
-              name="CardManagement"
-              component={CardManagementScreen}
-              options={{ title: "カード管理" }}
-            />
-            <Stack.Screen
-              name="FolderManagement"
-              component={FolderManagementScreen}
-              options={{ title: "フォルダ管理" }}
-            />
-            <Stack.Screen
-              name="FolderCards"
-              component={FolderCardsScreen}
-              options={{ title: "カード一覧" }}
-            />
-          </Stack.Navigator>
+          <RootNavigator />
         </NavigationContainer>
-      </FlashcardContext.Provider>
+      </FlashcardProvider>
     </GestureHandlerRootView>
   );
 }
