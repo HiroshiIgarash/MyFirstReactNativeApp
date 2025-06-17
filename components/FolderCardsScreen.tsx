@@ -1,4 +1,10 @@
-import React, { useContext, useState, useEffect, useLayoutEffect } from "react";
+import React, {
+  useContext,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -20,6 +26,9 @@ import * as DocumentPicker from "expo-document-picker";
 import Papa from "papaparse";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ActionSheetIOS, Platform } from "react-native";
+import CardItem from "./CardItem";
+import type { ListRenderItem } from "react-native";
+import type { Flashcard } from "../models/flashcard";
 
 const FolderCardsScreen: React.FC = () => {
   const context = useContext(FlashcardContext);
@@ -170,7 +179,10 @@ const FolderCardsScreen: React.FC = () => {
                 : card
             );
             context.setFlashcards && context.setFlashcards(updated);
-            Alert.alert("リセット完了", "全カードの統計情報をリセットしました。");
+            Alert.alert(
+              "リセット完了",
+              "全カードの統計情報をリセットしました。"
+            );
           },
         },
       ]
@@ -233,6 +245,23 @@ const FolderCardsScreen: React.FC = () => {
       }
     }
   }, [context]);
+
+  // --- FlatListのrenderItemをuseCallbackでメモ化 ---
+  const renderItem: ListRenderItem<Flashcard> = useCallback(
+    ({ item }) => (
+      <CardItem
+        item={item}
+        showStats={showStats}
+        onEdit={(id) =>
+          navigation.navigate("EditCard", { cardId: id, folderId })
+        }
+        onDelete={handleDelete}
+        navigation={navigation}
+        folderId={folderId}
+      />
+    ),
+    [showStats, navigation, folderId, handleDelete]
+  );
 
   return (
     <View style={styles.container}>
@@ -318,7 +347,9 @@ const FolderCardsScreen: React.FC = () => {
                 }}
                 style={styles.menuItem}
               >
-                <Text style={styles.menuItemText}>このフォルダの統計情報をリセット</Text>
+                <Text style={styles.menuItemText}>
+                  このフォルダの統計情報をリセット
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
@@ -355,57 +386,12 @@ const FolderCardsScreen: React.FC = () => {
         <FlatList
           data={cards}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.cardListCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardListFront}>{item.front}</Text>
-                <Text style={styles.cardListBack}>{item.back}</Text>
-                {showStats && (
-                  <>
-                    <Text style={styles.cardListStats}>
-                      出題回数: {item.shownCount}　正解: {item.correctCount}　不正解:{" "}
-                      {item.incorrectCount}
-                    </Text>
-                    <Text style={styles.cardListStats}>
-                      最終回答:{" "}
-                      {item.lastResult === "correct"
-                        ? "正解"
-                        : item.lastResult === "incorrect"
-                        ? "不正解"
-                        : item.lastResult === "pass"
-                        ? "パス"
-                        : "-"}
-                      {item.lastAnsweredAt
-                        ? `（${new Date(
-                            item.lastAnsweredAt
-                          ).toLocaleString()}）`
-                        : ""}
-                    </Text>
-                    <Text style={styles.cardListStats}>
-                      連続正解: {item.streak ?? 0}
-                    </Text>
-                  </>
-                )}
-                <View style={styles.cardListButtonRowBottom}>
-                  <TouchableOpacity
-                    style={styles.cardListEditButtonLarge}
-                    onPress={() =>
-                      navigation.navigate("EditCard", { cardId: item.id, folderId })
-                    }
-                  >
-                    <Text style={styles.cardListEditButtonTextLarge}>編集</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.cardListDeleteButtonLarge}
-                    onPress={() => handleDelete(item.id)}
-                  >
-                    <Text style={styles.cardListDeleteButtonTextLarge}>削除</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
+          renderItem={renderItem}
           style={styles.folderListTall}
+          extraData={cards}
+          removeClippedSubviews={false}
+          windowSize={7}
+          initialNumToRender={15}
         />
       )}
       <Text

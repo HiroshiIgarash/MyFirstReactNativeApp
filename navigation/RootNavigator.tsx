@@ -7,16 +7,18 @@ import FolderCardsScreen from "../components/FolderCardsScreen";
 import HomeScreen from "../components/HomeScreen";
 import DetailsScreen from "../components/DetailsScreen";
 import EditCardScreen from "../components/EditCardScreen";
+import SelectFolderScreen from "../components/SelectFolderScreen";
 
 // 画面間パラメータ型定義
 export type RootStackParamList = {
   Home: undefined;
   Details: undefined;
-  Anki: undefined;
+  Anki: { folderId?: string } | undefined;
   CardManagement: undefined;
   FolderManagement: undefined;
   FolderCards: { folderId: string } | undefined;
   EditCard: { cardId: string; folderId: string };
+  SelectFolder: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -57,6 +59,11 @@ const RootNavigator: React.FC = () => (
       name="EditCard"
       component={EditCardScreen}
       options={{ title: "カード編集" }}
+    />
+    <Stack.Screen
+      name="SelectFolder"
+      component={SelectFolderScreen}
+      options={{ title: "フォルダ選択" }}
     />
   </Stack.Navigator>
 );

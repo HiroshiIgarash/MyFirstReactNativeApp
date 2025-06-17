@@ -2,7 +2,6 @@ import React, { useContext, useState, useRef, useMemo, useEffect } from "react";
 import {
   View,
   Text,
-  Button,
   Animated,
   Easing,
   TouchableOpacity,
@@ -14,16 +13,19 @@ import {
   State as GestureState,
 } from "react-native-gesture-handler";
 import { FlashcardContext } from "../contexts/FlashcardContext";
+import { useRoute } from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
+import type { RootStackParamList } from "../navigation/RootNavigator";
 
 const AnkiScreen: React.FC = () => {
   const context = useContext(FlashcardContext);
   const flashcards = context?.flashcards || [];
-  const folders = context?.folders || [];
   const setFlashcards = context?.setFlashcards;
+  const route = useRoute<RouteProp<RootStackParamList, "Anki">>();
+  const folderId = route.params?.folderId;
 
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [cardResults, setCardResults] = useState<{
     [id: string]: "known" | "unknown" | undefined;
   }>({});
@@ -32,12 +34,13 @@ const AnkiScreen: React.FC = () => {
   const [swipeZone, setSwipeZone] = useState<"known" | "unknown" | null>(null);
   const [gesture, setGesture] = useState({ x: 0, y: 0 });
 
+  // Only use cards from the selected folder
   const filteredFlashcards = useMemo(
     () =>
       flashcards.filter((card) =>
-        selectedFolderId ? card.folderId === selectedFolderId : true
+        folderId ? card.folderId === folderId : false
       ),
-    [flashcards, selectedFolderId]
+    [flashcards, folderId]
   );
 
   const cardAnim = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
@@ -49,15 +52,25 @@ const AnkiScreen: React.FC = () => {
     setShowAnswer(false);
     animatedValue.setValue(0);
     cardAnim.setValue({ x: 0, y: 0 });
-  }, [selectedFolderId, filteredFlashcards.length]);
+  }, [folderId, filteredFlashcards.length]);
 
+  // Show count increment
   useEffect(() => {
-    if (folders.length > 0 && selectedFolderId === null) {
-      setSelectedFolderId(folders[0].id);
-    }
-  }, [folders, selectedFolderId]);
+    if (filteredFlashcards.length === 0) return;
+    const card = filteredFlashcards[currentCardIndex];
+    if (!card) return;
+    setFlashcards &&
+      setFlashcards((prev) => {
+        const prevCard = prev.find((c) => c.id === card.id);
+        if (!prevCard) return prev;
+        if (prevCard.shownCount > card.shownCount) return prev;
+        return prev.map((c) =>
+          c.id === card.id ? { ...c, shownCount: c.shownCount + 1 } : c
+        );
+      });
+  }, [currentCardIndex, folderId]);
 
-  // カードのフリップアニメーション
+  // Card flip animation
   const frontInterpolate = animatedValue.interpolate({
     inputRange: [0, 180],
     outputRange: ["0deg", "180deg"],
@@ -104,22 +117,7 @@ const AnkiScreen: React.FC = () => {
     setShowAnswer(!showAnswer);
   };
 
-  // 出題時 shownCount をインクリメント
-  useEffect(() => {
-    if (!setFlashcards) return;
-    const card = filteredFlashcards[currentCardIndex];
-    if (!card) return;
-    setFlashcards((prev) => {
-      const prevCard = prev.find((c) => c.id === card.id);
-      if (!prevCard) return prev;
-      if (prevCard.shownCount > card.shownCount) return prev;
-      return prev.map((c) =>
-        c.id === card.id ? { ...c, shownCount: c.shownCount + 1 } : c
-      );
-    });
-  }, [currentCardIndex, selectedFolderId]);
-
-  // スワイプ判定・アニメーション
+  // Swipe gesture logic
   const handleGestureEvent = (event: any) => {
     const { translationX, translationY } = event.nativeEvent;
     setGesture({ x: translationX, y: translationY });
@@ -133,7 +131,6 @@ const AnkiScreen: React.FC = () => {
     cardAnim.setValue({ x: translationX, y: translationY });
   };
 
-  // --- カードをスワイプ方向にアニメーションで消す ---
   const animateCardOut = (toX: number, toY: number, onComplete: () => void) => {
     setAnimating(true);
     Animated.timing(cardAnim, {
@@ -143,8 +140,8 @@ const AnkiScreen: React.FC = () => {
     }).start(() => {
       cardAnim.setValue({ x: 0, y: 0 });
       setAnimating(false);
-      setShowAnswer(false); // スワイプ時に必ず表に戻す
-      setIsFlipped(false); // アニメーション値もリセット
+      setShowAnswer(false);
+      setIsFlipped(false);
       animatedValue.setValue(0);
       onComplete();
     });
@@ -218,22 +215,10 @@ const AnkiScreen: React.FC = () => {
     }
   };
 
-  const goToPreviousCard = () => {
-    if (filteredFlashcards.length === 0) {
-      alert("まだこのフォルダにカードがありません……！");
-      return;
-    }
-    if (currentCardIndex > 0) {
-      setCurrentCardIndex(currentCardIndex - 1);
-    } else {
-      alert("このフォルダの最初のカードです……！");
-    }
-  };
-
   const currentCard =
     filteredFlashcards.length > 0 ? filteredFlashcards[currentCardIndex] : null;
 
-  // 透明度計算: swipeZoneに入ったときのスワイプ量で濃さを変える
+  // Swipe zone opacity
   let ellipseOpacity = 0;
   if (swipeZone === "known") {
     const xRatio = Math.min(1, Math.max(0, (-gesture.x - 50) / 150));
@@ -242,33 +227,6 @@ const AnkiScreen: React.FC = () => {
     const xRatio = Math.min(1, Math.max(0, (gesture.x - 50) / 150));
     ellipseOpacity = 0.1 + 0.9 * xRatio;
   }
-
-  // 履歴表示
-  const renderCardHistory = (card: any) => {
-    if (!card) return null;
-    return (
-      <View style={{ marginBottom: 10, alignItems: "center" }}>
-        <Text style={{ fontSize: 15, color: "#333" }}>
-          出題回数: {card.shownCount}　正解: {card.correctCount}　不正解:{" "}
-          {card.incorrectCount}
-        </Text>
-        <Text style={{ fontSize: 15, color: "#333" }}>
-          連続正解: {card.streak ?? 0}　最終:{" "}
-          {card.lastResult === "correct"
-            ? "○"
-            : card.lastResult === "incorrect"
-            ? "×"
-            : "-"}
-        </Text>
-        <Text style={{ fontSize: 13, color: "#888" }}>
-          最終回答日時:{" "}
-          {card.lastAnsweredAt
-            ? card.lastAnsweredAt.replace("T", " ").slice(0, 19)
-            : "-"}
-        </Text>
-      </View>
-    );
-  };
 
   return (
     <View style={styles.ankiContainer}>
@@ -339,189 +297,88 @@ const AnkiScreen: React.FC = () => {
           </View>
         )}
       </View>
-      <Text style={styles.ankiTitle}>暗記アプリですよ……</Text>
-      {renderCardHistory(currentCard)}
-      <Text style={{ fontSize: 16, color: "#888", marginBottom: 8 }}>
-        swipeZone: {swipeZone ?? "null"}
-      </Text>
-      {currentCard && (
-        <View style={{ marginBottom: 8, alignItems: "center" }}>
-          <Text style={{ fontSize: 14, color: "#333" }}>
-            出題回数: {currentCard.shownCount}　正解: {currentCard.correctCount}
-            　不正解: {currentCard.incorrectCount}　連続正解:{" "}
-            {currentCard.streak ?? 0}
-          </Text>
-          <Text style={{ fontSize: 12, color: "#888" }}>
-            最終回答:{" "}
-            {currentCard.lastResult
-              ? currentCard.lastResult === "correct"
-                ? "正解"
-                : currentCard.lastResult === "incorrect"
-                ? "不正解"
-                : "パス"
-              : "-"}
-            {currentCard.lastAnsweredAt
-              ? `（${new Date(currentCard.lastAnsweredAt).toLocaleString()}）`
-              : ""}
-          </Text>
-        </View>
-      )}
-      <Text style={styles.inputLabel}>学習するフォルダを選択……</Text>
-      <View style={styles.pickerContainer}>
-        {folders.length > 0 ? (
-          <View>
-            <Text style={styles.selectedFolderText}>
-              選択中:{" "}
-              {folders.find((f) => f.id === selectedFolderId)?.name || "未選択"}
-            </Text>
-            <View style={styles.folderSelectionButtons}>
-              {folders.map((folder) => (
-                <TouchableOpacity
-                  key={folder.id}
-                  style={[
-                    styles.folderSelectButton,
-                    selectedFolderId === folder.id &&
-                      styles.selectedFolderButton,
-                  ]}
-                  onPress={() => setSelectedFolderId(folder.id)}
-                >
-                  <Text
-                    style={[
-                      styles.folderSelectButtonText,
-                      selectedFolderId === folder.id &&
-                        styles.selectedFolderButtonTextActive,
-                    ]}
-                  >
-                    {folder.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        ) : (
-          <Text style={styles.noDataText}>
-            フォルダがありません。カード管理画面で作成してくださいね。
-          </Text>
-        )}
-      </View>
+      <Text style={styles.ankiTitle}>暗記アプリ</Text>
       {currentCard ? (
-        <PanGestureHandler
-          onGestureEvent={handleGestureEvent}
-          onHandlerStateChange={handleHandlerStateChange}
-          enabled={!animating}
-        >
-          <Animated.View
-            style={[
-              styles.cardWrapper,
-              {
-                transform: [
-                  { translateX: cardAnim.x },
-                  { translateY: cardAnim.y },
-                ],
-              },
-              dragging && { opacity: 0.8 },
-              dragging &&
-                swipeZone === "known" && { backgroundColor: "#e0ffe0" },
-              dragging &&
-                swipeZone === "unknown" && { backgroundColor: "#ffe0e0" },
-            ]}
+        <>
+          <PanGestureHandler
+            onGestureEvent={handleGestureEvent}
+            onHandlerStateChange={handleHandlerStateChange}
+            enabled={!animating}
           >
-            <TouchableOpacity
-              onPress={flipCard}
-              activeOpacity={1}
-              style={{ flex: 1 }}
+            <Animated.View
+              style={[
+                styles.cardWrapper,
+                {
+                  transform: [
+                    { translateX: cardAnim.x },
+                    { translateY: cardAnim.y },
+                  ],
+                },
+                dragging && { opacity: 0.8 },
+              ]}
             >
-              <Animated.View
-                style={[styles.card, styles.cardFront, frontAnimatedStyle]}
+              <TouchableOpacity
+                onPress={flipCard}
+                activeOpacity={1}
+                style={{ flex: 1, width: "100%" }}
               >
-                <Text style={styles.cardText}>{currentCard.front}</Text>
-              </Animated.View>
-              <Animated.View
-                style={[styles.card, styles.cardBack, backAnimatedStyle]}
-              >
-                <Text style={styles.cardAnswerText}>{currentCard.back}</Text>
-              </Animated.View>
-            </TouchableOpacity>
-          </Animated.View>
-        </PanGestureHandler>
+                <Animated.View
+                  style={[styles.card, styles.cardFront, frontAnimatedStyle]}
+                >
+                  <Text style={styles.cardText}>{currentCard.front}</Text>
+                </Animated.View>
+                <Animated.View
+                  style={[styles.card, styles.cardBack, backAnimatedStyle]}
+                >
+                  <Text style={styles.cardAnswerText}>{currentCard.back}</Text>
+                </Animated.View>
+              </TouchableOpacity>
+            </Animated.View>
+          </PanGestureHandler>
+          {/* パスボタン */}
+          <TouchableOpacity
+            style={styles.passButton}
+            onPress={() => {
+              if (!currentCard) return;
+              setFlashcards &&
+                setFlashcards((prev) =>
+                  prev.map((c) =>
+                    c.id !== currentCard.id
+                      ? c
+                      : {
+                          ...c,
+                          passCount: (c.passCount || 0) + 1,
+                          lastAnsweredAt: new Date().toISOString(),
+                          lastResult: "pass",
+                          streak: 0,
+                        }
+                  )
+                );
+              goToNextCard();
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.passButtonText}>パス</Text>
+          </TouchableOpacity>
+        </>
       ) : (
         <View style={styles.card}>
           <Text style={styles.cardText}>カードがありません……</Text>
-          <Text style={styles.subtitle}>
-            このフォルダにカードがありません。下のボタンで追加してくださいね……
-          </Text>
         </View>
       )}
-      <View style={styles.buttonRow}>
-        <Button
-          title="前へ"
-          onPress={goToPreviousCard}
-          disabled={!currentCard}
-        />
-        <View style={{ width: 20 }} />
-        <Button title="次へ" onPress={goToNextCard} disabled={!currentCard} />
-      </View>
-      <Button
-        title="カードを追加・編集する……"
-        onPress={() => {
-          /* navigation.navigate("CardManagement") */
-        }}
-      />
-      <View style={{ height: 10 }} />
-      {/* ホームに戻るボタンはナビゲーションpropsが必要な場合は追加 */}
       <StatusBar style="auto" />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-    padding: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#2e7d32",
-    marginBottom: 20,
-  },
-  cardBox: {
-    width: "100%",
-    minHeight: 180,
-    backgroundColor: "#f1f8e9",
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 30,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardText: {
-    fontSize: 22, // 少し小さめに
-    color: "#333",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  flipHint: { fontSize: 14, color: "#888", textAlign: "center" },
-  buttonRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-    marginBottom: 20,
-  },
-  progress: { fontSize: 16, color: "#888", marginTop: 10 },
-  emptyText: { fontSize: 20, color: "#888", textAlign: "center" },
   ankiContainer: {
     flex: 1,
     backgroundColor: "#fff",
     padding: 16,
     position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
   },
   ankiTitle: {
     fontSize: 24,
@@ -531,16 +388,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   cardWrapper: {
-    width: "100%",
+    width: 340,
+    maxWidth: "100%",
     aspectRatio: 0.75,
     borderRadius: 16,
     overflow: "hidden",
     elevation: 4,
-    maxWidth: 340,
     alignSelf: "center",
     maxHeight: 340,
     minHeight: 180,
     backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    display: "flex",
+    flexDirection: "column",
   },
   card: {
     flex: 1,
@@ -562,6 +423,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#f1f8e9",
     alignItems: "center",
     justifyContent: "center",
+    width: "100%",
+    height: "100%",
   },
   cardBack: {
     position: "absolute",
@@ -573,49 +436,35 @@ const styles = StyleSheet.create({
     backgroundColor: "#e8f5e9",
     alignItems: "center",
     justifyContent: "center",
+    width: "100%",
+    height: "100%",
+  },
+  cardText: {
+    fontSize: 22,
+    color: "#333",
+    textAlign: "center",
+    marginBottom: 10,
   },
   cardAnswerText: {
-    fontSize: 20, // 少し小さめに
+    fontSize: 20,
     color: "#2e7d32",
     textAlign: "center",
     fontWeight: "bold",
   },
-  subtitle: { fontSize: 14, color: "#888", textAlign: "center", marginTop: 8 },
-  inputLabel: { fontSize: 16, color: "#333", marginBottom: 8 },
-  pickerContainer: {
-    width: "100%",
-    borderRadius: 8,
-    overflow: "hidden",
-    marginBottom: 16,
-  },
-  selectedFolderText: {
-    fontSize: 16,
-    color: "#2e7d32",
-    fontWeight: "bold",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  folderSelectionButtons: {
-    flexDirection: "row",
-    justifyContent: "center",
-    flexWrap: "wrap",
-  },
-  folderSelectButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: "#f1f8e9",
-    margin: 4,
+  passButton: {
+    marginTop: 18,
+    backgroundColor: "#eee",
+    borderRadius: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 48,
+    alignSelf: "center",
     elevation: 2,
   },
-  selectedFolderButton: { backgroundColor: "#e8f5e9" },
-  folderSelectButtonText: { fontSize: 16, color: "#333", textAlign: "center" },
-  selectedFolderButtonTextActive: { color: "#2e7d32", fontWeight: "bold" },
-  noDataText: {
-    fontSize: 16,
+  passButtonText: {
     color: "#888",
+    fontWeight: "bold",
+    fontSize: 20,
     textAlign: "center",
-    marginTop: 16,
   },
 });
 

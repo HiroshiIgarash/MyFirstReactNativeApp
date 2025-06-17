@@ -37,12 +37,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       <View style={{ width: "80%" }}>
         <Button
           title="暗記を始める……"
-          onPress={() => navigation.navigate("Anki")}
-        />
-        <View style={{ height: 15 }} />
-        <Button
-          title="カードを管理する……"
-          onPress={() => navigation.navigate("CardManagement")}
+          onPress={() => navigation.navigate("SelectFolder")}
         />
         <View style={{ height: 15 }} />
         <Button

@@ -28,6 +28,9 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@storybook/addon-ondevice-actions": "^9.0.9",
+    "@storybook/addon-ondevice-notes": "^9.0.9",
+    "@storybook/react-native": "^9.0.9",
     "@types/react": "~19.0.10",
     "typescript": "~5.8.3"
   },
