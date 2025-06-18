@@ -14,15 +14,20 @@ import {
 } from "react-native-gesture-handler";
 import { FlashcardContext } from "../contexts/FlashcardContext";
 import { useRoute } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/RootNavigator";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const AnkiScreen: React.FC = () => {
   const context = useContext(FlashcardContext);
   const flashcards = context?.flashcards || [];
   const setFlashcards = context?.setFlashcards;
   const route = useRoute<RouteProp<RootStackParamList, "Anki">>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const folderId = route.params?.folderId;
+  const insets = useSafeAreaInsets();
 
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
@@ -121,9 +126,9 @@ const AnkiScreen: React.FC = () => {
   const handleGestureEvent = (event: any) => {
     const { translationX, translationY } = event.nativeEvent;
     setGesture({ x: translationX, y: translationY });
-    if (translationX < -50 && translationY < -40) {
+    if (translationX < -50) {
       setSwipeZone("known");
-    } else if (translationX > 50 && translationY < -40) {
+    } else if (translationX > 50) {
       setSwipeZone("unknown");
     } else {
       setSwipeZone(null);
@@ -138,12 +143,14 @@ const AnkiScreen: React.FC = () => {
       duration: 250,
       useNativeDriver: true,
     }).start(() => {
-      cardAnim.setValue({ x: 0, y: 0 });
-      setAnimating(false);
       setShowAnswer(false);
       setIsFlipped(false);
       animatedValue.setValue(0);
-      onComplete();
+      setTimeout(() => {
+        cardAnim.setValue({ x: 0, y: 0 });
+        setAnimating(false);
+        onComplete();
+      }, 10); // 少し遅延してindexを進める
     });
   };
 
@@ -152,7 +159,7 @@ const AnkiScreen: React.FC = () => {
       const { translationX, translationY } = event.nativeEvent;
       let swiped = false;
       const card = filteredFlashcards[currentCardIndex];
-      if (translationX < -50 && translationY < -40) {
+      if (translationX < -50) {
         setCardResults((prev) => ({ ...prev, [card?.id || ""]: "known" }));
         setFlashcards &&
           setFlashcards((prev) =>
@@ -170,7 +177,7 @@ const AnkiScreen: React.FC = () => {
           );
         animateCardOut(-300, -300, () => goToNextCard());
         swiped = true;
-      } else if (translationX > 50 && translationY < -40) {
+      } else if (translationX > 50) {
         setCardResults((prev) => ({ ...prev, [card?.id || ""]: "unknown" }));
         setFlashcards &&
           setFlashcards((prev) =>
@@ -228,8 +235,30 @@ const AnkiScreen: React.FC = () => {
     ellipseOpacity = 0.1 + 0.9 * xRatio;
   }
 
+  const folder = context?.folders?.find((f) => f.id === folderId);
+
   return (
     <View style={styles.ankiContainer}>
+      {/* 閉じるボタン */}
+      <TouchableOpacity
+        style={[styles.closeButton, { top: insets.top + 8 }]}
+        onPress={() => navigation.goBack()}
+        activeOpacity={0.7}
+        accessibilityLabel="閉じる"
+      >
+        <Text style={styles.closeButtonText}>×</Text>
+      </TouchableOpacity>
+      {/* フォルダ名表示 */}
+      {folder && (
+        <>
+          <Text style={styles.folderName}>{folder.name}</Text>
+          <Text style={styles.cardCount}>{
+            filteredFlashcards.length > 0
+              ? `${currentCardIndex + 1} / ${filteredFlashcards.length}`
+              : `0 / 0`
+          }</Text>
+        </>
+      )}
       {/* --- 半楕円の色エリア --- */}
       <View
         style={{
@@ -297,7 +326,6 @@ const AnkiScreen: React.FC = () => {
           </View>
         )}
       </View>
-      <Text style={styles.ankiTitle}>暗記アプリ</Text>
       {currentCard ? (
         <>
           <PanGestureHandler
@@ -380,23 +408,55 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  ankiTitle: {
-    fontSize: 24,
+  closeButton: {
+    position: 'absolute',
+    top: 32,
+    left: 16,
+    zIndex: 10,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  closeButtonText: {
+    fontSize: 28,
+    color: '#444',
+    fontWeight: 'bold',
+    lineHeight: 36,
+    textAlign: 'center',
+  },
+  folderName: {
+    fontSize: 18,
     fontWeight: "bold",
-    color: "#2e7d32",
-    marginBottom: 16,
+    color: "#1976d2",
+    marginTop: 8,
+    marginBottom: 4,
     textAlign: "center",
+    alignSelf: "center",
+    letterSpacing: 1,
+  },
+  cardCount: {
+    fontSize: 15,
+    color: '#888',
+    marginBottom: 10,
+    textAlign: 'center',
+    alignSelf: 'center',
+    letterSpacing: 0.5,
   },
   cardWrapper: {
-    width: 340,
-    maxWidth: "100%",
-    aspectRatio: 0.75,
+    width: "95%",
+    maxWidth: 600,
     borderRadius: 16,
     overflow: "hidden",
-    elevation: 4,
     alignSelf: "center",
-    maxHeight: 340,
-    minHeight: 180,
+    height: 360,
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
@@ -411,7 +471,9 @@ const styles = StyleSheet.create({
     padding: 16,
     position: "relative",
     width: "100%",
-    backgroundColor: "#f1f8e9",
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "#bbb",
   },
   cardFront: {
     position: "absolute",
@@ -420,11 +482,13 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderRadius: 16,
-    backgroundColor: "#f1f8e9",
+    backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
     width: "100%",
     height: "100%",
+    borderWidth: 2,
+    borderColor: "#bbb",
   },
   cardBack: {
     position: "absolute",
@@ -433,11 +497,13 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderRadius: 16,
-    backgroundColor: "#e8f5e9",
+    backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
     width: "100%",
     height: "100%",
+    borderWidth: 2,
+    borderColor: "#bbb",
   },
   cardText: {
     fontSize: 22,

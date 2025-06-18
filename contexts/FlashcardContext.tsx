@@ -7,12 +7,20 @@ export interface FlashcardContextType {
   flashcards: Flashcard[];
   addFlashcard: (front: string, back: string, folderId: string) => void;
   folders: Folder[];
-  addFolder: (name: string) => void;
+  addFolder: (name: string, color?: string, icon?: string) => void;
   editFlashcard?: (id: string, front: string, back: string) => void;
   deleteFlashcard?: (id: string) => void;
   setFlashcards?: React.Dispatch<React.SetStateAction<Flashcard[]>>;
+  setFolders?: React.Dispatch<React.SetStateAction<Folder[]>>;
   // フォルダ削除
   deleteFolder?: (id: string) => void;
+  // フォルダ名編集
+  editFolderName?: (
+    id: string,
+    newName: string,
+    color?: string,
+    icon?: string
+  ) => void;
 }
 
 export const FlashcardContext = createContext<FlashcardContextType | null>(
@@ -62,7 +70,9 @@ export const FlashcardProvider: React.FC<{ children: React.ReactNode }> = ({
   const addFlashcard = useCallback(
     (front: string, back: string, folderId: string) => {
       const newCard: Flashcard = {
-        id: Date.now().toString(),
+        id: `${Date.now().toString()}_${Math.random()
+          .toString(36)
+          .slice(2, 8)}`,
         front,
         back,
         folderId,
@@ -80,13 +90,18 @@ export const FlashcardProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   // フォルダを追加する関数
-  const addFolder = useCallback((name: string) => {
-    const newFolder: Folder = {
-      id: Date.now().toString(),
-      name,
-    };
-    setFolders((prevFolders) => [...prevFolders, newFolder]);
-  }, []);
+  const addFolder = useCallback(
+    (name: string, color?: string, icon?: string) => {
+      const newFolder: Folder = {
+        id: Date.now().toString(),
+        name,
+        color,
+        icon,
+      };
+      setFolders((prevFolders) => [...prevFolders, newFolder]);
+    },
+    []
+  );
 
   // カードを編集する関数
   const editFlashcard = useCallback(
@@ -105,7 +120,6 @@ export const FlashcardProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // フォルダを削除する関数
   const deleteFolder = useCallback((id: string) => {
-    if (id === "uncategorized") return;
     setFolders((prev) => prev.filter((folder) => folder.id !== id));
     setFlashcards((prev) =>
       prev.map((card) =>
@@ -113,6 +127,25 @@ export const FlashcardProvider: React.FC<{ children: React.ReactNode }> = ({
       )
     );
   }, []);
+
+  // フォルダ名・色・アイコンを編集する関数
+  const editFolderName = useCallback(
+    (id: string, newName: string, color?: string, icon?: string) => {
+      setFolders((prev) =>
+        prev.map((folder) =>
+          folder.id === id
+            ? {
+                ...folder,
+                name: newName,
+                color: color ?? folder.color,
+                icon: icon ?? folder.icon,
+              }
+            : folder
+        )
+      );
+    },
+    []
+  );
 
   const value: FlashcardContextType = {
     flashcards,
@@ -122,7 +155,9 @@ export const FlashcardProvider: React.FC<{ children: React.ReactNode }> = ({
     editFlashcard,
     deleteFlashcard,
     setFlashcards,
-    deleteFolder, // 追加
+    setFolders,
+    deleteFolder,
+    editFolderName, // 追加
   };
 
   if (loading) {

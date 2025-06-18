@@ -263,6 +263,18 @@ const FolderCardsScreen: React.FC = () => {
     [showStats, navigation, folderId, handleDelete]
   );
 
+  // --- FlatListのrefを作成 ---
+  const flatListRef = React.useRef<FlatList<Flashcard>>(null);
+
+  // --- 統計表示のトグル時に一番上へ ---
+  const handleToggleStats = () => {
+    setShowStats((s) => !s);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  };
+
+  // --- 重複IDを修正したcardsを使う ---
+  const uniqueCards = fixDuplicateCardIds(cards);
+
   return (
     <View style={styles.container}>
       <View
@@ -284,7 +296,7 @@ const FolderCardsScreen: React.FC = () => {
             統計表示
           </Text>
           <TouchableOpacity
-            onPress={() => setShowStats((s) => !s)}
+            onPress={handleToggleStats}
             style={{
               width: 44,
               height: 28,
@@ -375,7 +387,7 @@ const FolderCardsScreen: React.FC = () => {
           </Pressable>
         </Modal>
       )}
-      {cards.length === 0 ? (
+      {uniqueCards.length === 0 ? (
         <View style={{ alignItems: "center", marginTop: 40 }}>
           <Text style={styles.noDataText}>
             このフォルダにはカードがありません
@@ -384,11 +396,12 @@ const FolderCardsScreen: React.FC = () => {
         </View>
       ) : (
         <FlatList
-          data={cards}
+          ref={flatListRef}
+          data={uniqueCards}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           style={styles.folderListTall}
-          extraData={cards}
+          extraData={uniqueCards}
           removeClippedSubviews={false}
           windowSize={7}
           initialNumToRender={15}
