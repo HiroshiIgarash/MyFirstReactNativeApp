@@ -518,8 +518,15 @@ const AnkiScreen: React.FC = () => {
           </TouchableOpacity>
         </>
       ) : (
-        <View style={styles.card}>
-          <Text style={styles.cardText}>カードがありません……</Text>
+        <View
+          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+        >
+          <Text style={{ fontSize: 20, color: "#888", marginBottom: 8 }}>
+            今覚えるべきカードはありません
+          </Text>
+          <Text style={{ fontSize: 15, color: "#bbb", textAlign: "center" }}>
+            次の復習タイミングまでお待ちください
+          </Text>
         </View>
       )}
       <StatusBar style="auto" />
