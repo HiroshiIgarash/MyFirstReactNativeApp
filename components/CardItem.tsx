@@ -41,6 +41,12 @@ class CardItem extends React.PureComponent<CardItemProps> {
               <Text style={styles.cardListStats}>
                 連続正解: {item.streak ?? 0}
               </Text>
+              {/* --- 追加: 次回出題日時 --- */}
+              {item.nextDue && (
+                <Text style={styles.cardListStats}>
+                  次回出題: {new Date(item.nextDue).toLocaleString()}
+                </Text>
+              )}
             </>
           )}
           <View style={styles.cardListButtonRowBottom}>

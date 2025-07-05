@@ -61,6 +61,7 @@ const AnkiScreen: React.FC = () => {
   const [animating, setAnimating] = useState(false);
   const [swipeZone, setSwipeZone] = useState<"known" | "unknown" | null>(null);
   const [gesture, setGesture] = useState({ x: 0, y: 0 });
+  const [sessionFinished, setSessionFinished] = useState(false);
 
   // セッション用カード配列（抽出＆シャッフル済み）
   const [sessionCards, setSessionCards] = useState<Flashcard[]>([]);
@@ -279,8 +280,29 @@ const AnkiScreen: React.FC = () => {
     if (currentCardIndex < sessionCards.length - 1) {
       setCurrentCardIndex(currentCardIndex + 1);
     } else {
-      alert("このフォルダの最後のカードです……！");
+      setSessionFinished(true);
     }
+  };
+
+  // --- セッション再スタート用 ---
+  const restartSession = () => {
+    if (!folderId) return;
+    // フォルダ内、dueなカードのみ抽出＆シャッフル
+    const now = new Date();
+    const due = flashcards.filter(
+      (c) =>
+        c.folderId === folderId &&
+        !c.mastered &&
+        (!c.nextDue || new Date(c.nextDue) <= now)
+    );
+    for (let i = due.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [due[i], due[j]] = [due[j], due[i]];
+    }
+    setSessionCards(due);
+    setCurrentCardIndex(0);
+    setShowAnswer(false);
+    setSessionFinished(false);
   };
 
   const currentCard =
@@ -385,7 +407,47 @@ const AnkiScreen: React.FC = () => {
           </View>
         )}
       </View>
-      {currentCard ? (
+      {sessionFinished ? (
+        <View
+          style={[
+            styles.card,
+            { minHeight: 180, height: undefined, justifyContent: "center" },
+          ]}
+        >
+          <Text
+            style={[
+              styles.cardText,
+              {
+                fontSize: 24,
+                color: "#1976d2",
+                fontWeight: "bold",
+                marginBottom: 16,
+              },
+            ]}
+          >
+            すべてのカードを学習しました！お疲れ様です！
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.passButton,
+              { backgroundColor: "#1976d2", marginBottom: 12 },
+            ]}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.passButtonText, { color: "#fff" }]}>
+              学習タブに戻る
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.passButton}
+            onPress={restartSession}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.passButtonText}>もう一度学習する</Text>
+          </TouchableOpacity>
+        </View>
+      ) : currentCard ? (
         <>
           <PanGestureHandler
             onGestureEvent={handleGestureEvent}
