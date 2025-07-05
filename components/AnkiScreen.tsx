@@ -6,6 +6,7 @@ import {
   Easing,
   TouchableOpacity,
   StyleSheet,
+  Dimensions,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -19,13 +20,35 @@ import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/RootNavigator";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { Flashcard } from "../models/flashcard";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+
+// 短期間隔 spaced repetition インターバル（分単位）
+const INTERVALS_MINUTES = [5, 15, 60, 360, 1440, 4320, 10080]; // 5分, 15分, 1h, 6h, 1d, 3d, 7d
+const MAX_INTERVAL_INDEX = INTERVALS_MINUTES.length - 1;
+
+function getDueAndRandomizedCards(cards: Flashcard[]): Flashcard[] {
+  const now = new Date();
+  // nextDueが未設定または過去のもの、かつmasteredでないカードのみ対象
+  const due = cards.filter(
+    (c) => !c.mastered && (!c.nextDue || new Date(c.nextDue) <= now)
+  );
+  // シャッフル（Fisher-Yates）
+  for (let i = due.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [due[i], due[j]] = [due[j], due[i]];
+  }
+  return due;
+}
 
 const AnkiScreen: React.FC = () => {
   const context = useContext(FlashcardContext);
   const flashcards = context?.flashcards || [];
   const setFlashcards = context?.setFlashcards;
   const route = useRoute<RouteProp<RootStackParamList, "Anki">>();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const folderId = route.params?.folderId;
   const insets = useSafeAreaInsets();
 
@@ -39,30 +62,43 @@ const AnkiScreen: React.FC = () => {
   const [swipeZone, setSwipeZone] = useState<"known" | "unknown" | null>(null);
   const [gesture, setGesture] = useState({ x: 0, y: 0 });
 
-  // Only use cards from the selected folder
-  const filteredFlashcards = useMemo(
-    () =>
-      flashcards.filter((card) =>
-        folderId ? card.folderId === folderId : false
-      ),
-    [flashcards, folderId]
-  );
+  // セッション用カード配列（抽出＆シャッフル済み）
+  const [sessionCards, setSessionCards] = useState<Flashcard[]>([]);
+
+  // フォルダ変更時のみ、該当カードを抽出＆シャッフル
+  useEffect(() => {
+    if (!folderId) {
+      setSessionCards([]);
+      setCurrentCardIndex(0);
+      setShowAnswer(false);
+      return;
+    }
+    // フォルダ内、dueなカードのみ抽出
+    const now = new Date();
+    const due = flashcards.filter(
+      (c) =>
+        c.folderId === folderId &&
+        !c.mastered &&
+        (!c.nextDue || new Date(c.nextDue) <= now)
+    );
+    // シャッフル（Fisher-Yates）
+    for (let i = due.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [due[i], due[j]] = [due[j], due[i]];
+    }
+    setSessionCards(due);
+    setCurrentCardIndex(0);
+    setShowAnswer(false);
+  }, [folderId]);
 
   const cardAnim = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const animatedValue = useRef(new Animated.Value(0)).current;
   const [isFlipped, setIsFlipped] = useState(false);
 
-  useEffect(() => {
-    setCurrentCardIndex(0);
-    setShowAnswer(false);
-    animatedValue.setValue(0);
-    cardAnim.setValue({ x: 0, y: 0 });
-  }, [folderId, filteredFlashcards.length]);
-
   // Show count increment
   useEffect(() => {
-    if (filteredFlashcards.length === 0) return;
-    const card = filteredFlashcards[currentCardIndex];
+    if (sessionCards.length === 0) return;
+    const card = sessionCards[currentCardIndex];
     if (!card) return;
     setFlashcards &&
       setFlashcards((prev) => {
@@ -73,7 +109,7 @@ const AnkiScreen: React.FC = () => {
           c.id === card.id ? { ...c, shownCount: c.shownCount + 1 } : c
         );
       });
-  }, [currentCardIndex, folderId]);
+  }, [currentCardIndex, folderId, sessionCards.length]);
 
   // Card flip animation
   const frontInterpolate = animatedValue.interpolate({
@@ -122,8 +158,17 @@ const AnkiScreen: React.FC = () => {
     setShowAnswer(!showAnswer);
   };
 
+  // --- spaced repetition用: 次回復習日時を計算 ---
+  function getNextDue(intervalIndex: number): string {
+    const now = new Date();
+    const minutes =
+      INTERVALS_MINUTES[Math.min(intervalIndex, MAX_INTERVAL_INDEX)];
+    return new Date(now.getTime() + minutes * 60 * 1000).toISOString();
+  }
+
   // Swipe gesture logic
   const handleGestureEvent = (event: any) => {
+    if (animating) return; // アニメーション中は無視
     const { translationX, translationY } = event.nativeEvent;
     setGesture({ x: translationX, y: translationY });
     if (translationX < -50) {
@@ -140,7 +185,7 @@ const AnkiScreen: React.FC = () => {
     setAnimating(true);
     Animated.timing(cardAnim, {
       toValue: { x: toX, y: toY },
-      duration: 250,
+      duration: 400,
       useNativeDriver: true,
     }).start(() => {
       setShowAnswer(false);
@@ -150,7 +195,7 @@ const AnkiScreen: React.FC = () => {
         cardAnim.setValue({ x: 0, y: 0 });
         setAnimating(false);
         onComplete();
-      }, 10); // 少し遅延してindexを進める
+      }, 50); // ← ここを50msに短縮
     });
   };
 
@@ -158,42 +203,58 @@ const AnkiScreen: React.FC = () => {
     if (event.nativeEvent.state === GestureState.END && !animating) {
       const { translationX, translationY } = event.nativeEvent;
       let swiped = false;
-      const card = filteredFlashcards[currentCardIndex];
+      const card = sessionCards[currentCardIndex];
       if (translationX < -50) {
+        // 正解（known）
         setCardResults((prev) => ({ ...prev, [card?.id || ""]: "known" }));
         setFlashcards &&
           setFlashcards((prev) =>
-            prev.map((c) =>
-              c.id !== card.id
-                ? c
-                : {
-                    ...c,
-                    correctCount: (c.correctCount || 0) + 1,
-                    lastAnsweredAt: new Date().toISOString(),
-                    lastResult: "correct",
-                    streak: (c.streak || 0) + 1,
-                  }
-            )
+            prev.map((c) => {
+              if (c.id !== card.id) return c;
+              const prevIdx = c.intervalIndex ?? 0;
+              const nextIdx = Math.min(
+                (c.intervalIndex ?? 0) + 1,
+                MAX_INTERVAL_INDEX
+              );
+              const mastered = nextIdx === MAX_INTERVAL_INDEX;
+              return {
+                ...c,
+                correctCount: (c.correctCount || 0) + 1,
+                lastAnsweredAt: new Date().toISOString(),
+                lastResult: "correct",
+                streak: (c.streak || 0) + 1,
+                intervalIndex: nextIdx,
+                nextDue: getNextDue(nextIdx),
+                mastered,
+              };
+            })
           );
-        animateCardOut(-300, -300, () => goToNextCard());
+        animateCardOut(-SCREEN_WIDTH * 1.2, -SCREEN_WIDTH * 0.8, () =>
+          goToNextCard()
+        ); // 左上に大きく場外へ
         swiped = true;
       } else if (translationX > 50) {
+        // 不正解（unknown）
         setCardResults((prev) => ({ ...prev, [card?.id || ""]: "unknown" }));
         setFlashcards &&
           setFlashcards((prev) =>
-            prev.map((c) =>
-              c.id !== card.id
-                ? c
-                : {
-                    ...c,
-                    incorrectCount: (c.incorrectCount || 0) + 1,
-                    lastAnsweredAt: new Date().toISOString(),
-                    lastResult: "incorrect",
-                    streak: 0,
-                  }
-            )
+            prev.map((c) => {
+              if (c.id !== card.id) return c;
+              return {
+                ...c,
+                incorrectCount: (c.incorrectCount || 0) + 1,
+                lastAnsweredAt: new Date().toISOString(),
+                lastResult: "incorrect",
+                streak: 0,
+                intervalIndex: 0,
+                nextDue: getNextDue(0),
+                mastered: false,
+              };
+            })
           );
-        animateCardOut(300, -300, () => goToNextCard());
+        animateCardOut(SCREEN_WIDTH * 1.2, -SCREEN_WIDTH * 0.8, () =>
+          goToNextCard()
+        ); // 右上に大きく場外へ
         swiped = true;
       }
       if (!swiped) {
@@ -211,11 +272,11 @@ const AnkiScreen: React.FC = () => {
   };
 
   const goToNextCard = () => {
-    if (filteredFlashcards.length === 0) {
+    if (sessionCards.length === 0) {
       alert("まだこのフォルダにカードがありません……！");
       return;
     }
-    if (currentCardIndex < filteredFlashcards.length - 1) {
+    if (currentCardIndex < sessionCards.length - 1) {
       setCurrentCardIndex(currentCardIndex + 1);
     } else {
       alert("このフォルダの最後のカードです……！");
@@ -223,7 +284,7 @@ const AnkiScreen: React.FC = () => {
   };
 
   const currentCard =
-    filteredFlashcards.length > 0 ? filteredFlashcards[currentCardIndex] : null;
+    sessionCards.length > 0 ? sessionCards[currentCardIndex] : null;
 
   // Swipe zone opacity
   let ellipseOpacity = 0;
@@ -239,7 +300,7 @@ const AnkiScreen: React.FC = () => {
 
   return (
     <View style={styles.ankiContainer}>
-      {/* 閉じるボタン */}
+      {/* 閉じるボタン・フォルダ名・カウント・swipeZone色エリアなど復活 */}
       <TouchableOpacity
         style={[styles.closeButton, { top: insets.top + 8 }]}
         onPress={() => navigation.goBack()}
@@ -248,18 +309,16 @@ const AnkiScreen: React.FC = () => {
       >
         <Text style={styles.closeButtonText}>×</Text>
       </TouchableOpacity>
-      {/* フォルダ名表示 */}
       {folder && (
         <>
           <Text style={styles.folderName}>{folder.name}</Text>
-          <Text style={styles.cardCount}>{
-            filteredFlashcards.length > 0
-              ? `${currentCardIndex + 1} / ${filteredFlashcards.length}`
-              : `0 / 0`
-          }</Text>
+          <Text style={styles.cardCount}>
+            {sessionCards.length > 0
+              ? `${currentCardIndex + 1} / ${sessionCards.length}`
+              : `0 / 0`}
+          </Text>
         </>
       )}
-      {/* --- 半楕円の色エリア --- */}
       <View
         style={{
           position: "absolute",
@@ -345,6 +404,7 @@ const AnkiScreen: React.FC = () => {
                 dragging && { opacity: 0.8 },
               ]}
             >
+              {/* カード裏表アニメーション・flipCardも一時コメントアウト */}
               <TouchableOpacity
                 onPress={flipCard}
                 activeOpacity={1}
@@ -361,9 +421,12 @@ const AnkiScreen: React.FC = () => {
                   <Text style={styles.cardAnswerText}>{currentCard.back}</Text>
                 </Animated.View>
               </TouchableOpacity>
+              {/* <View style={styles.card}>
+                <Text style={styles.cardText}>{currentCard.front}</Text>
+              </View> */}
             </Animated.View>
           </PanGestureHandler>
-          {/* パスボタン */}
+          {/* パスボタンも一時コメントアウト */}
           <TouchableOpacity
             style={styles.passButton}
             onPress={() => {
@@ -379,6 +442,9 @@ const AnkiScreen: React.FC = () => {
                           lastAnsweredAt: new Date().toISOString(),
                           lastResult: "pass",
                           streak: 0,
+                          intervalIndex: 0,
+                          nextDue: getNextDue(0),
+                          mastered: false,
                         }
                   )
                 );
@@ -409,17 +475,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   closeButton: {
-    position: 'absolute',
+    position: "absolute",
     top: 32,
     left: 16,
     zIndex: 10,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: "rgba(255,255,255,0.85)",
     borderRadius: 20,
     width: 40,
     height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -427,10 +493,10 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     fontSize: 28,
-    color: '#444',
-    fontWeight: 'bold',
+    color: "#444",
+    fontWeight: "bold",
     lineHeight: 36,
-    textAlign: 'center',
+    textAlign: "center",
   },
   folderName: {
     fontSize: 18,
@@ -444,17 +510,17 @@ const styles = StyleSheet.create({
   },
   cardCount: {
     fontSize: 15,
-    color: '#888',
+    color: "#888",
     marginBottom: 10,
-    textAlign: 'center',
-    alignSelf: 'center',
+    textAlign: "center",
+    alignSelf: "center",
     letterSpacing: 0.5,
   },
   cardWrapper: {
     width: "95%",
     maxWidth: 600,
     borderRadius: 16,
-    overflow: "hidden",
+    overflow: "visible", // ← ここをvisibleに変更
     alignSelf: "center",
     height: 360,
     backgroundColor: "#fff",
